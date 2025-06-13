@@ -81,5 +81,28 @@ def procesar_flujos_por_ventanas_from_df(
         ) 
     ) -> List[Tuple[np.ndarray, int]]:
         """
-        
+        Agrupa por 'Ventana_Inicio' y genera:
+            - ndarray shape (L, n_features) en float32
+            - entero con la etiqueta
+        Devuelve la lista para enganchar con 'WindowDataset'
         """
+        numeric_cols = df_windows.drop(columns=drop_cols, errors="ignore").select_dtypes(include=[np.number]).columns
+        
+        label_names = sorted(df_windows["Label"].unique())
+        lbl2idx = {lbl: i for i, lbl in enumerate(label_names)}
+        
+        samples: List[Tuple[np.ndarray, int]] = []
+        for _, sub in df_windows.groupby('Ventana_Inicio'):
+            sub = sub.sort_values("Timestamp")
+            label_idx = lbl2idx[sub["Label"].iloc[0]]
+            feats = sub[numeric_cols].to_numpy(dtype=np.float32)
+            
+            if feats.shape[0] > max_seq_len:
+                feats = feats[:max_seq_len]
+            elif feats.shape[0] < max_seq_len:
+                pad = np.zeros((max_seq_len - feats.shape[0], feats.shape[1]), dtype=np.float32)
+                feats = np.vstack([feats, pad])
+            
+            samples.append((feats, label_idx))
+        
+        return samples
