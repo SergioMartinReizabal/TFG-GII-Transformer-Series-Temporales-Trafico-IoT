@@ -106,3 +106,24 @@ def procesar_flujos_por_ventanas_from_df(
             samples.append((feats, label_idx))
         
         return samples
+    
+    
+    class WindowDataset(Dataset):
+        """
+        Dataset PyTorch para servir (tensor, label) con el escalado ya aplicado.
+        """
+        def __init__(self,
+                     samples: List[Tuple[np.ndarray, int]],
+                     scaler):
+            self.samples = samples
+            self.scaler = scaler
+            
+        def __len__(self):
+            return len(self.samples)
+        
+        def __getitem__(self, idx: int):
+            arr, lbl = self.samples[idx]
+            flat = arr.reshape(-1, arr.shape[1])
+            norm = self.scaler.transform(flat).reshape(arr.shape)
+            return torch.from_numpy(norm), torch.tensor(lbl, dtype=torch.long)
+            
