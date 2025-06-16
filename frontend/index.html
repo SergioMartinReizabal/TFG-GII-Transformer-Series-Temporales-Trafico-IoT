@@ -1,0 +1,31 @@
+<!DOCTYPE html><html lang="es"><meta charset="utf-8">
+<title>Demo TFG · IoT Traffic</title>
+<style>
+ body{font-family:system-ui;max-width:38rem;margin:3rem auto;padding:0 1rem}
+ table{width:100%;border-collapse:collapse;margin-top:1rem}
+ td,th{padding:.3rem .6rem;border:1px solid #ccc}
+ tr:nth-child(even){background:#f6f6f6}
+</style>
+<h1>Clasificador IoT por ventanas</h1>
+<input type="file" id="f" accept=".csv">
+<button onclick="send()">Predecir</button>
+<table id="t" hidden>
+ <thead><tr><th>#</th><th>Etiqueta</th><th>Conf.</th></tr></thead>
+ <tbody></tbody>
+</table>
+<script>
+async function send(){
+  const file=document.getElementById('f').files[0];
+  if(!file) return alert('Selecciona un CSV primero');
+  const fd=new FormData(); fd.append('csv',file);
+  const res=await fetch('/predict',{method:'POST',body:fd});
+  const data=await res.json();
+  const tbody=document.querySelector('#t tbody');
+  tbody.innerHTML='';
+  data.forEach((r,i)=>
+    tbody.insertAdjacentHTML('beforeend',
+      `<tr><td>${i}</td><td>${r.label}</td><td>${(r.confidence*100).toFixed(1)}%</td></tr>`));
+  document.getElementById('t').hidden=false;
+}
+</script>
+</html>
