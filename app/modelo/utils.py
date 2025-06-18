@@ -118,4 +118,12 @@ class WindowDataset(Dataset):
         arr, lbl = self.samples[idx]
         flat = arr.reshape(-1, arr.shape[1])
         norm = self.scaler.transform(flat).reshape(arr.shape)
+        norm[~np.isfinite(norm)] = 0.0      # limpia NaN/Inf → 0
+        if not np.isfinite(norm).all():
+            bad = np.argwhere(~np.isfinite(norm))[0]     # 1ª coordenada problemática
+            r, c = bad        # fila, columna dentro de la ventana
+            col = TRAIN_COLS[c]
+            print(f"⚠️  Valor no finito en fila {r}, columna '{col}'. "
+                f"Raw={flat[r,c]}, mean={self.scaler.mean_[c]:.3g}, scale={self.scaler.scale_[c]:.3g}")
+        assert np.isfinite(norm).all(), "Scaler produjo NaN/Inf"
         return torch.from_numpy(norm), torch.tensor(lbl, dtype=torch.long)

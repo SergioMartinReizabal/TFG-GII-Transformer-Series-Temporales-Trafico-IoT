@@ -1,9 +1,10 @@
 # app/main.py ---------------------------------------------------------
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-import pandas as pd, torch, joblib, json, io, sys
+import pandas as pd, torch, joblib, json, io, sys, math, asyncio
 from pathlib import Path
+from pandas import Timestamp, Timedelta
 
 # --- importa tu código local
 sys.path.append(str(Path(__file__).parent))          # añade app/ al path
@@ -25,15 +26,8 @@ model = TransformerEncoderClassifierWithCLS(
     d_model=64, num_heads=4, d_ff=128, num_layers=2,
     input_dim=76, num_classes=len(label_map), max_seq_len=128
 ).to(device)
-model.load_state_dict(torch.load(EXPORT/"model.pth", map_location=device))
+model.load_state_dict(torch.load(EXPORT/"model2.pth", map_location=device))
 model.eval()
-
-
-import math
-
-def _safe_float(x: float) -> float:
-    """Devuelve x si es finito; 0.0 en caso contrario (NaN, ±Inf)."""
-    return x if math.isfinite(x) else 0.0
 
 # ----------------------------- FastAPI --------------------------------
 app = FastAPI(title="TFG · Clasificador IoT")
@@ -52,14 +46,20 @@ async def predict(csv: UploadFile = File(...), etiqueta: str = "UNKNOWN"):
     df_windows = procesar_flujos_por_ventanas_from_df(df, etiqueta_global=etiqueta)
     samples    = windows_to_tensors(df_windows, max_seq_len=127, train_cols=TRAIN_COLS )
     dataset    = WindowDataset(samples, scaler)
+    
+    # Obtener los incios de ventana en el mismo orden que 'samples'
+    starts = sorted(df_windows["Ventana_Inicio"].unique())
 
     outs = []
     with torch.no_grad():
-        for x, _ in dataset:
+        for (x, _), start in zip(dataset, starts):
+            ts_start = Timestamp(start)
             logits = model(x.unsqueeze(0).to(device))
             probs  = torch.softmax(logits, dim=1).cpu().numpy()[0]
-            conf   = _safe_float(float(probs.max()))
+            conf   = float(probs.max())
+            intervalo = f"{ts_start} - {start + Timedelta(seconds=5)}"
             outs.append({
+                "interval": intervalo,
                 "label": idx_to_lbl[int(probs.argmax())],
                 "confidence": conf
             })

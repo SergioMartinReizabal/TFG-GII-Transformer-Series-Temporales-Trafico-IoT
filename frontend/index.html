@@ -1,31 +1,82 @@
 <!DOCTYPE html><html lang="es"><meta charset="utf-8">
-<title>Demo TFG · IoT Traffic</title>
-<style>
- body{font-family:system-ui;max-width:38rem;margin:3rem auto;padding:0 1rem}
- table{width:100%;border-collapse:collapse;margin-top:1rem}
- td,th{padding:.3rem .6rem;border:1px solid #ccc}
- tr:nth-child(even){background:#f6f6f6}
-</style>
-<h1>Clasificador IoT por ventanas</h1>
-<input type="file" id="f" accept=".csv">
-<button onclick="send()">Predecir</button>
-<table id="t" hidden>
- <thead><tr><th>#</th><th>Etiqueta</th><th>Conf.</th></tr></thead>
- <tbody></tbody>
-</table>
+<title>Clasificador IoT · TFG</title>
+
+<!-- Bootstrap 5 -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+<!-- DataTables (Bootstrap 5 theme) -->
+ <link href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+
+ <div class="container py-4">
+    <h1 class="mb-4">Clasificador de tráfico IoT</h1>
+
+    <label class="form-label">CSV generado por CICFlowMeter</label>
+    <input class="form-control" type="file" id="file" accept=".csv">
+ 
+
+    <button id="btn" class="btn btn-primary mb-3 mt-3">Predecir</button>
+
+    <div id="progress" class="alert alert-info py-2 px-3 d-none">
+        <span class="spinner-border spinner-border-sm me-2"></span>Procesando...
+    </div>
+
+    <table id="tbl" class="table table-striped w-100 d-none mt-4">
+        <thead class="table-dark"><tr>
+            <th>Ventana (5 s)</th>
+            <th>Etiqueta</th>
+            <th>Confianza (%)</th>
+        </tr></thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
+
 <script>
-async function send(){
-  const file=document.getElementById('f').files[0];
-  if(!file) return alert('Selecciona un CSV primero');
-  const fd=new FormData(); fd.append('csv',file);
-  const res=await fetch('/predict',{method:'POST',body:fd});
-  const data=await res.json();
-  const tbody=document.querySelector('#t tbody');
-  tbody.innerHTML='';
-  data.forEach((r,i)=>
-    tbody.insertAdjacentHTML('beforeend',
-      `<tr><td>${i}</td><td>${r.label}</td><td>${(r.confidence*100).toFixed(1)}%</td></tr>`));
-  document.getElementById('t').hidden=false;
-}
+const fileInput = $('#file')[0];
+const $progress = $('#progress')
+const $table = $('#tbl').DataTable({
+    pageLength: 15,
+    order: [[0, 'asc']], // orden inicial por fecha
+    columns: [
+        {data:'interval'},
+        {data:'label'},
+        {data:'confidence', render: (d, type) => {
+                // type = 'display', 'sort', 'filter', 'type'
+                return type == 'display' ? (d*100).toFixed(3) + ' %' : d;
+            },
+            className: 'text-end'
+        }
+    ]
+});
+
+$('#btn').on('click', async ()=>{
+    const file = fileInput.files[0];
+    if(!file){alert('Selecciona un CSV'); return;}
+
+    $progress.removeClass('d-none');
+    $table.clear().draw(); // vacía la tabla
+    $('#tbl').addClass('d-none');
+
+    const fd = new FormData(); 
+    fd.append('csv', file);
+    try {
+        const res = await fetch('/predict', {method:'POST', body:fd})
+        if(!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        $table.rows.add(data).draw();
+        if(!data.length) alert('El archivo no contenía ventanas válidas.');
+        else $('#tbl').removeClass('d-none');
+    }catch(e){
+        console.error(e); 
+        alert('Fallo: '+e.message);
+    }finally{
+        $progress.addClass('d-none');
+    }
+});
+
 </script>
+
 </html>
