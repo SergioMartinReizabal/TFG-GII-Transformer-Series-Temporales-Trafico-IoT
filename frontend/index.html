@@ -28,11 +28,14 @@
         </tr></thead>
         <tbody></tbody>
     </table>
+
+    <canvas id="chart" height="90" class="mt-4"></canvas>
 </div>
 
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
 <script>
 const fileInput = $('#file')[0];
@@ -52,6 +55,12 @@ const $table = $('#tbl').DataTable({
     ]
 });
 
+const ctx = document.getElementById('chart');
+let chart;                      
+const palette = [               
+  '#0d6efd','#20c997','#ffc107','#dc3545','#6f42c1','#198754','#fd7e14'
+];
+
 $('#btn').on('click', async ()=>{
     const file = fileInput.files[0];
     if(!file){alert('Selecciona un CSV'); return;}
@@ -59,6 +68,12 @@ $('#btn').on('click', async ()=>{
     $progress.removeClass('d-none');
     $table.clear().draw(); // vacía la tabla
     $('#tbl').addClass('d-none');
+
+    if (chart) {          // destruir gráfico previo
+    chart.destroy();
+    chart = null;
+    }
+    $('#chart').addClass('d-none');  // ocultar canvas
 
     const fd = new FormData(); 
     fd.append('csv', file);
@@ -69,6 +84,45 @@ $('#btn').on('click', async ()=>{
         $table.rows.add(data).draw();
         if(!data.length) alert('El archivo no contenía ventanas válidas.');
         else $('#tbl').removeClass('d-none');
+
+        // Preparar datos para la gráfica
+        const labels = []; // eje X: inicio de ventana
+        const values = []; // eje Y: índice de clase (para color)
+        const labelSet = []; // para mapear clase -> índice
+        data.forEach(r=>{
+            labels.push(r.interval.split(' - ')[0]); // Solo inicio de ventana
+            let idx = labelSet.indexOf(r.label);
+            if(idx===-1){idx = labelSet.push(r.label)-1;}
+            values.push(idx);
+        });
+
+        // Construir datasets (1 por etiqueta)
+        const datasets = labelSet.map((lbl,i)=>({
+        label: lbl,
+        data: values.map(v=> v===i?1:0),   // barras de altura 1
+        backgroundColor: palette[i%palette.length],
+        stack:'uno'
+        }));
+
+        // Crear o actualizar gráfico
+        if(chart){ chart.destroy(); }
+        chart = new Chart(ctx,{
+        type:'bar',
+        data:{ labels, datasets },
+        options:{
+            responsive:true,
+            plugins:{
+            legend:{ position:'top' },
+            tooltip:{ callbacks:{ label:(c)=>labelSet[c.datasetIndex] } }
+            },
+            scales:{
+            x:{ title:{text:'Ventanas de 5 s',display:true}, stacked:true },
+            y:{ display:false, stacked:true }  // altura no importa, sólo color
+            }
+        }
+        });
+        $('#chart').removeClass('d-none');  // mostrar nuevo gráfico
+
     }catch(e){
         console.error(e); 
         alert('Fallo: '+e.message);
