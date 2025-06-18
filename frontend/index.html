@@ -57,9 +57,15 @@ const $table = $('#tbl').DataTable({
 
 const ctx = document.getElementById('chart');
 let chart;                      
-const palette = [               
-  '#0d6efd','#20c997','#ffc107','#dc3545','#6f42c1','#198754','#fd7e14'
-];
+const COLOR_BY_LABEL = {
+  "Benigno" :  "#0d6efd",  // azul
+  "PortScan":  "#20c997",  // verde
+  "DoS-TCP" :  "#ffc107",  // amarillo
+  "DDoS-TCP":  "#dc3545",  // rojo
+  "OSScan"  :  "#6f42c1",  // morado
+  "DDoS-ICMP": "#fd7e14",  // naranja
+  "__other" :  "#6c757d"   // gris para clases no previstas
+};
 
 $('#btn').on('click', async ()=>{
     const file = fileInput.files[0];
@@ -99,9 +105,9 @@ $('#btn').on('click', async ()=>{
         // Construir datasets (1 por etiqueta)
         const datasets = labelSet.map((lbl,i)=>({
         label: lbl,
-        data: values.map(v=> v===i?1:0),   // barras de altura 1
-        backgroundColor: palette[i%palette.length],
-        stack:'uno'
+        data: values.map(v=> v===i ? 1 : 0),
+        backgroundColor: COLOR_BY_LABEL[lbl] ?? COLOR_BY_LABEL.__other,
+        stack: 'uno'
         }));
 
         // Crear o actualizar gráfico
