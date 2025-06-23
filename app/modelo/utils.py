@@ -107,23 +107,41 @@ def windows_to_tensors(
 
 # ─────────────────────────── 3 · Dataset PyTorch ───────────────────────────
 class WindowDataset(Dataset):
-    def __init__(self, samples: List[Tuple[np.ndarray, int]], scaler):
+    def __init__(self, samples: List[Tuple[np.ndarray, int]], scaler, train_cols):
         self.samples = samples
         self.scaler = scaler
+        self.train_cols = train_cols
 
     def __len__(self) -> int:
         return len(self.samples)
 
     def __getitem__(self, idx: int):
-        arr, lbl = self.samples[idx]
-        flat = arr.reshape(-1, arr.shape[1])
+        arr, lbl = self.samples[idx]                   # arr shape = (L, F)
+        flat = arr.reshape(-1, arr.shape[1]).copy()    # (L, F) → (L·F, F)
+
+        # 1) LIMPIAR ANTES DE ESCALAR  ----------------------------
+        mask_bad = ~np.isfinite(flat)                  # NaN o ±Inf
+        if mask_bad.any():
+            # logueamos sólo la primera ocurrencia problemática
+            r, c = np.argwhere(mask_bad)[0]
+            col_name = self.train_cols[c] \
+                       if c < len(self.train_cols) else f"col_{c}"
+            raw_val = flat[r, c]
+            print(f"Valor no finito en fila {r}, columna '{col_name}'. "
+                  f"Raw={raw_val}  →  0.0")
+            flat[mask_bad] = 0.0
+
+        # 2) ESCALAR ---------------------------------------------
         norm = self.scaler.transform(flat).reshape(arr.shape)
-        norm[~np.isfinite(norm)] = 0.0      # limpia NaN/Inf → 0
+
+        # 3) SEGURIDAD EXTRA (rara vez salta) ---------------------
         if not np.isfinite(norm).all():
-            bad = np.argwhere(~np.isfinite(norm))[0]     # 1ª coordenada problemática
-            r, c = bad        # fila, columna dentro de la ventana
-            col = TRAIN_COLS[c]
-            print(f"⚠️  Valor no finito en fila {r}, columna '{col}'. "
-                f"Raw={flat[r,c]}, mean={self.scaler.mean_[c]:.3g}, scale={self.scaler.scale_[c]:.3g}")
-        assert np.isfinite(norm).all(), "Scaler produjo NaN/Inf"
+            r, c = np.argwhere(~np.isfinite(norm))[0]
+            col_name = self.train_cols[c] \
+                       if c < len(self.train_cols) else f"col_{c}"
+            raise ValueError(
+                f"Scaler produjo valor no finito en fila {r}, "
+                f"columna '{col_name}'")
+
+        # 4) DEVOLVER TENSORES -----------------------------------
         return torch.from_numpy(norm), torch.tensor(lbl, dtype=torch.long)
