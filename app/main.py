@@ -121,7 +121,7 @@ async def predict(csv: UploadFile = File(...),
             "confusion": cm.tolist(),
             "metrics"  : {
                 "accuracy"   : rep["accuracy"],
-                "f1_weighted": rep["weighted avg"]["f1-score"]
+                "f1_weight": rep["weighted avg"]["f1-score"]
             }
         }
 

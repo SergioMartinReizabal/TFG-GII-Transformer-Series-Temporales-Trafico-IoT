@@ -1,208 +1,240 @@
-<!DOCTYPE html><html lang="es"><meta charset="utf-8">
-<title>Clasificador IoT · TFG</title>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Clasificador IoT · TFG</title>
+  <!-- CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container py-4">
+    <h1 class="mb-4">Clasificador de tráfico IoT</h1>
 
-<!-- ─── CSS ─────────────────────────────────────────────────────────── -->
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-<link href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <label class="form-label">CSV generado por CICFlowMeter</label>
+    <input class="form-control" type="file" id="file" accept=".csv">
 
-<div class="container py-4">
-  <h1 class="mb-4">Clasificador de tráfico IoT</h1>
+    <button id="btn" class="btn btn-primary mt-3 mb-3">Predecir</button>
 
-  <label class="form-label">CSV generado por CICFlowMeter</label>
-  <input class="form-control" type="file" id="file" accept=".csv">
+    <div id="progress" class="alert alert-info py-2 px-3 d-none">
+      <span class="spinner-border spinner-border-sm me-2"></span>Procesando…
+    </div>
 
-  <button id="btn" class="btn btn-primary mt-3 mb-3">Predecir</button>
+    <!-- Tabla -->
+    <table id="tbl" class="table table-striped w-100 d-none mt-4">
+      <thead class="table-dark">
+        <tr>
+          <th>Ventana (5 s)</th>
+          <th>Predicción</th>
+          <th>Confianza (%)</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
 
-  <div id="progress" class="alert alert-info py-2 px-3 d-none">
-    <span class="spinner-border spinner-border-sm me-2"></span>Procesando…
+    <!-- Gráficas -->
+    <div class="w-100 px-0">
+
+      <!-- Predicciones -->
+      <div id="pred-section" class="mb-5 text-start d-none">
+        <h2 class="h5">Predicciones</h2>
+        <div id="chart-pred" style="height:480px;"></div>
+        <button id="rz-pred" class="btn btn-secondary btn-sm mt-2 d-inline-block">
+          Reset zoom
+        </button>
+      </div>
+
+      <!-- Etiquetas verdaderas -->
+      <div id="gt-section" class="mb-5 text-start d-none">
+        <h2 class="h5">Etiquetas verdaderas</h2>
+        <div id="chart-gt" style="height:480px;"></div>
+        <button id="rz-gt" class="btn btn-secondary btn-sm mt-2 d-inline-block">
+          Reset zoom
+        </button>
+      </div>
+
+      <!-- Matriz de confusión -->
+      <div id="cm-section" class="mb-5 text-center d-none">
+        <h2 class="h5">Matriz de confusión</h2>
+        <div id="chart-cm" style="width:600px; height:600px; margin:0 auto;"></div>
+      </div>
+
+    </div>
+
+    <!-- Métricas -->
+    <div id="metrics"></div>
   </div>
 
-  <!-- Tabla -->
-  <table id="tbl" class="table table-striped w-100 d-none mt-4">
-    <thead class="table-dark">
-      <tr><th>Ventana (5 s)</th><th>Predicción</th><th>Confianza (%)</th></tr>
-    </thead><tbody></tbody>
-  </table>
+  <!-- JS libs -->
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 
-  <!-- Gráficas -->
-  <div class="w-100 px-0">
-    <div id="chart-pred" class="d-none" style="height:480px;"></div>
-    <div id="chart-gt"   class="d-none" style="height:480px;"></div>
-    <div id="chart-cm"   class="d-none" style="height:440px;"></div>
-  </div>
+  <script>
+  // Colores globales
+  const COLOR = {
+    Benigno:'#0d6efd', PortScan:'#20c997', 'DoS-TCP':'#ffc107',
+    'DDoS-TCP':'#dc3545', OSScan:'#6f42c1', 'DDoS-ICMP':'#fd7e14',
+    __other:'#6c757d'
+  };
 
-  <!-- Botones reset -->
-  <button id="rz-pred" class="btn btn-secondary btn-sm mt-2 d-none">Reset zoom (pred)</button>
-  <button id="rz-gt"   class="btn btn-secondary btn-sm mt-2 d-none">Reset zoom (gt)</button>
+  const divPred = document.getElementById('chart-pred');
+  const divGT   = document.getElementById('chart-gt');
+  const divCM   = document.getElementById('chart-cm');
 
-  <!-- Métricas (se inyectan al final) -->
-  <div id="metrics"></div>
-</div>
+  // DataTable
+  const table = $('#tbl').DataTable({
+    pageLength:15,
+    order:[[0,'asc']],
+    columns:[
+      {data:'interval', type:'datetime'},
+      {data:'label'},
+      {data:'confidence', className:'text-end',
+        render:(d,t)=> t==='display' ? (d*100).toFixed(2)+' %' : d}
+    ]
+  });
 
-<!-- ─── JS libs ──────────────────────────────────────────────────────── -->
-<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
-<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+  $('#btn').on('click', async ()=>{
 
-<script>
-/* ───────────- Configuración global -─────────── */
-const COLOR = {
-  Benigno:'#0d6efd', PortScan:'#20c997', 'DoS-TCP':'#ffc107',
-  'DDoS-TCP':'#dc3545', OSScan:'#6f42c1', 'DDoS-ICMP':'#fd7e14',
-  __other:'#6c757d'
-};
-const divPred = document.getElementById('chart-pred');
-const divGT   = document.getElementById('chart-gt');
-const divCM   = document.getElementById('chart-cm');
-const $rzPred = $('#rz-pred'), $rzGT = $('#rz-gt');
-let layoutPred=null, layoutGT=null;
+    // Ocultar secciones anteriores
+    $('#pred-section, #gt-section, #cm-section').addClass('d-none');
 
-/* ───────────- DataTable vacío -─────────── */
-const table = $('#tbl').DataTable({
-  pageLength:15,
-  order:[[0,'asc']],
-  columns:[
-    {data:'interval', type:'datetime'},
-    {data:'label'},
-    {data:'confidence',className:'text-end',
-      render:(d,t)=>t==='display'?(d*100).toFixed(2)+' %':d}
-  ]
-});
+    // Mostrar progreso y limpiar
+    $('#progress').removeClass('d-none');
+    table.clear().draw();
+    $('#tbl').addClass('d-none');
+    Plotly.purge(divPred);
+    Plotly.purge(divGT);
+    Plotly.purge(divCM);
+    $('#metrics').empty();
 
-/* ───────────- Botón “Predecir” -─────────── */
-$('#btn').on('click', async()=>{
-  const file = $('#file')[0].files[0];
-  if(!file){ alert('Selecciona un CSV'); return; }
-
-  /* Reset UI */
-  $('#progress').removeClass('d-none');
-  table.clear().draw(); $('#tbl').addClass('d-none');
-  Plotly.purge(divPred); Plotly.purge(divGT); Plotly.purge(divCM);
-  $('#chart-pred,#chart-gt,#chart-cm').addClass('d-none');
-  $rzPred.addClass('d-none'); $rzGT.addClass('d-none');
-  $('#metrics').empty();
-
-  /* Backend */
-  const fd=new FormData(); fd.append('csv',file);
-  try{
-    const r=await fetch('/predict',{method:'POST',body:fd});
-    if(!r.ok) throw new Error(await r.text());
-    const {pred, evaluation}=await r.json();
-
-    /* Tabla */
-    table.rows.add(pred).draw(); $('#tbl').removeClass('d-none');
-
-    /* ── Utilidad: genera gráfico de barras apiladas ───────── */
-    const makeStack = async (records, key, div) => {
-
-      /* 1) Etiquetas X “limpias”  (YYYY-MM-DD HH:MM:SS) */
-      const labels     = records
-          .map(d => d.interval.split(' - ')[0]           // “2023-01-01T00:05:30.000000”
-                      .replace('T', ' ')                // → “2023-01-01 00:05:30.000000”
-                      .replace(/\.\d+$/, ''));          // → “2023-01-01 00:05:30”
-      const barColors  = records.map(d => COLOR[d[key]] ?? COLOR.__other);
-      const classes    = [...new Set(records.map(d => d[key]))];
-
-      /* 2) Trazas ---------------------------------------------------------- */
-      const traceBars = {
-        type : 'bar',
-        showlegend : false,
-        x    : labels,
-        y    : Array(labels.length).fill(1),
-        marker : { color: barColors },
-        customdata   : records.map(d => d[key]),
-        hovertemplate: '%{x}<br>'+key+': %{customdata}<extra></extra>'
-      };
-
-      /* “Fantasmas” para leyenda (uno por clase) */
-      const legendGhost = classes.map(lbl => ({
-        type : 'bar', x : [null], y : [null],
-        marker : { color: COLOR[lbl] ?? COLOR.__other },
-        name   : lbl,
-        showlegend : true,
-        legendgroup: 'g',
-        visible    : 'legendonly'
-      }));
-
-      /* 3) Layout  --------------------------------------------------------- */
-      const layout = {
-        barmode : 'stack',
-
-        /*  ─ tickmode:'auto'  deja que Plotly decida cada cuánto rotular ─ */
-        xaxis : {
-          type       : 'category',
-          tickangle  : -45,
-          tickmode   : 'auto',
-          automargin : true,
-          title      : { text:'Ventanas de 5 s', standoff:18 }
-        },
-        yaxis : { visible:false },
-
-        legend : {
-          orientation : 'h',
-          xanchor:'center', x:0.5,
-          yanchor:'bottom', y:1.08
-        },
-
-        margin : { t:40, r:10, b:95, l:20 }
-      };
-
-      /* 4) Render & resize (fix “small on load” en Safari/Chrome) ---------- */
-      await Plotly.newPlot(div, [traceBars, ...legendGhost], layout, {
-        responsive:true, displaylogo:false
-      });
-      setTimeout(() => Plotly.Plots.resize(div), 50);
-
-      return layout;
-    };
-
-
-    /* Gráfica de predicciones */
-    layoutPred=await makeStack(pred,'label',divPred);
-    $('#chart-pred, #rz-pred').removeClass('d-none');
-
-    /* Si hay etiquetas verdaderas… */
-    if(evaluation){
-      /* segunda gráfica (GT) */
-      layoutGT = await makeStack(pred,'true',divGT);
-      $('#chart-gt, #rz-gt').removeClass('d-none');
-
-      /* Matriz de confusión */
-      const cmLabels=evaluation.labels;
-      const cmTrace={
-        type:'heatmap',
-        z:evaluation.confusion,
-        x:cmLabels, y:cmLabels,
-        colorscale:'Blues', showscale:true,
-        hovertemplate:'Real %{y}<br>Pred %{x}: %{z}<extra></extra>'
-      };
-      const cmLayout={
-        title:'Matriz de confusión',
-        xaxis:{title:'Predicho',constrain:'domain'},
-        yaxis:{title:'Real',autorange:'reversed'},
-        margin:{t:40,r:20,b:60,l:60}
-      };
-      await Plotly.newPlot(divCM,[cmTrace],cmLayout,
-                           {responsive:true,displaylogo:false});
-      setTimeout(()=>Plotly.Plots.resize(divCM),50);
-      $('#chart-cm').removeClass('d-none');
-
-      /* Métricas al final */
-      const m=evaluation.metrics;
-      $('#metrics').html(
-        `<div class="alert alert-secondary mt-3">
-           <strong>Accuracy:</strong> ${(m.accuracy*100).toFixed(2)} % &nbsp;•&nbsp;
-           <strong>F1 ponderado:</strong> ${(m.f1_weight*100).toFixed(2)} %
-         </div>`
-      );
+    // Leer archivo
+    const file = $('#file')[0].files[0];
+    if(!file){
+      alert('Selecciona un CSV');
+      $('#progress').addClass('d-none');
+      return;
     }
+    const fd = new FormData(); fd.append('csv', file);
 
-  }catch(e){ console.error(e); alert('Error: '+e.message);}
-  finally{ $('#progress').addClass('d-none'); }
-});
+    try {
+      const r = await fetch('/predict',{method:'POST', body:fd});
+      if(!r.ok) throw new Error(await r.text());
+      const { pred, evaluation } = await r.json();
 
-/* ───────────- Reset zoom -─────────── */
-$rzPred.on('click',()=>Plotly.relayout(divPred,{'xaxis.autorange':true}));
-$rzGT  .on('click',()=>Plotly.relayout(divGT  ,{'xaxis.autorange':true}));
-</script>
+      // Pintar tabla
+      table.rows.add(pred).draw();
+      $('#tbl').removeClass('d-none');
+
+      // Función para barras apiladas (sin title en layout)
+      const makeStack = async (records, key, div) => {
+        const labels    = records.map(d=> d.interval.split(' - ')[0]
+                                    .replace('T',' ').replace(/\.\d+$/,''));
+        const barColors = records.map(d=> COLOR[d[key]] ?? COLOR.__other);
+        const classes   = [...new Set(records.map(d=> d[key]))];
+
+        const traceBars = {
+          type:'bar',
+          showlegend:false,
+          x:labels,
+          y:labels.map(()=>1),
+          marker:{ color: barColors },
+          customdata:records.map(d=>d[key]),
+          hovertemplate:`%{x}<br>${key}: %{customdata}<extra></extra>`
+        };
+        const legendGhost = classes.map(lbl=>({
+          type:'bar', x:[null], y:[null],
+          marker:{ color: COLOR[lbl] ?? COLOR.__other },
+          name:lbl, showlegend:true,
+          legendgroup:'g', visible:'legendonly'
+        }));
+
+        const layout = {
+          barmode:'stack',
+          xaxis:{
+            type:'category',
+            tickangle:-45,
+            tickmode:'auto',
+            automargin:true,
+            title:{ text:'Ventanas de 5 s', standoff:18 }
+          },
+          yaxis:{ visible:false },
+          legend:{
+            orientation:'h',
+            xanchor:'center', x:0.5,
+            yanchor:'bottom', y:1.08
+          },
+          margin:{ t:40, r:10, b:95, l:20 }
+        };
+
+        await Plotly.newPlot(div, [traceBars, ...legendGhost], layout, {
+          responsive:true, displaylogo:false
+        });
+        setTimeout(()=>Plotly.Plots.resize(div), 50);
+      };
+
+      // Predicciones
+      await makeStack(pred,'label',divPred);
+      $('#pred-section').removeClass('d-none');
+
+      // Etiquetas verdaderas
+      if(evaluation){
+        await makeStack(pred,'true',divGT);
+        $('#gt-section').removeClass('d-none');
+
+        // Matriz de confusión
+        const cmLabels = evaluation.labels;
+        const cmTrace = {
+          type:'heatmap',
+          z:evaluation.confusion,
+          x:cmLabels, y:cmLabels,
+          colorscale:'Blues',
+          showscale:true,
+          hovertemplate:'Real %{y}<br>Pred %{x}: %{z}<extra></extra>',
+          text:evaluation.confusion,
+          texttemplate:'%{text}',
+          textfont:{ size:14, color:'black' }
+        };
+        const cmLayout = {
+          xaxis:{ title:'Predicho', constrain:'domain', automargin: true },
+          yaxis:{
+            title:{ text:'Real', standoff: 20 },
+            automargin: true,
+            autorange:'reversed',
+            scaleanchor:'x',
+            scaleratio:1
+          },
+          width:600,
+          height:600,
+          margin:{ t:20, r:20, b:60, l:80 }
+        };
+        await Plotly.newPlot(divCM, [cmTrace], cmLayout, {
+          responsive:true, displaylogo:false
+        });
+        setTimeout(()=>Plotly.Plots.resize(divCM),50);
+        $('#cm-section').removeClass('d-none');
+
+        // Métricas
+        const m = evaluation.metrics;
+        $('#metrics').html(`
+          <div class="alert alert-secondary mt-3">
+            <strong>Accuracy:</strong> ${(m.accuracy*100).toFixed(2)} % &nbsp;•&nbsp;
+            <strong>F1 ponderado:</strong> ${(m.f1_weight*100).toFixed(2)} %
+          </div>`);
+      }
+
+    } catch(e) {
+      console.error(e);
+      alert('Error: '+e.message);
+    } finally {
+      $('#progress').addClass('d-none');
+    }
+  });
+
+  // Reset zoom
+  $('#rz-pred').on('click', ()=> Plotly.relayout(divPred, {'xaxis.autorange':true}));
+  $('#rz-gt').on('click',   ()=> Plotly.relayout(divGT,   {'xaxis.autorange':true}));
+  </script>
+</body>
+</html>
