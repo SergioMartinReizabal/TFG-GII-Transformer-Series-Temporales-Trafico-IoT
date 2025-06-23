@@ -29,114 +29,143 @@
         <tbody></tbody>
     </table>
 
-    <canvas id="chart" height="90" class="mt-4"></canvas>
+    <div class="w-100 px-0">        
+        <div id="chart" style="height:500px;"></div>
+    </div>
+
+    <button id="resetZoom" class="btn btn-secondary btn-sm mt-2 d-none">
+    Reset zoom
+    </button>
+
 </div>
 
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 
 <script>
-const fileInput = $('#file')[0];
-const $progress = $('#progress')
-const $table = $('#tbl').DataTable({
-    pageLength: 15,
-    order: [[0, 'asc']], // orden inicial por fecha
-    columns: [
-        {data:'interval'},
-        {data:'label'},
-        {data:'confidence', render: (d, type) => {
-                // type = 'display', 'sort', 'filter', 'type'
-                return type == 'display' ? (d*100).toFixed(3) + ' %' : d;
-            },
-            className: 'text-end'
-        }
-    ]
+/* DataTable vacío de inicio */
+const table = $('#tbl').DataTable({
+  pageLength: 15,
+  order: [[0,'asc']],
+  columns: [
+    { data:'interval' },
+    { data:'label'    },
+    { data:'confidence',
+      className:'text-end',
+      render:(d,t)=> t==='display' ? (d*100).toFixed(3)+' %' : d }
+  ]
 });
 
-const ctx = document.getElementById('chart');
-let chart;                      
-const COLOR_BY_LABEL = {
-  "Benigno" :  "#0d6efd",  // azul
-  "PortScan":  "#20c997",  // verde
-  "DoS-TCP" :  "#ffc107",  // amarillo
-  "DDoS-TCP":  "#dc3545",  // rojo
-  "OSScan"  :  "#6f42c1",  // morado
-  "DDoS-ICMP": "#fd7e14",  // naranja
-  "__other" :  "#6c757d"   // gris para clases no previstas
+/* Paleta fija por etiqueta */
+const COLOR = {
+  Benigno   : '#0d6efd',
+  PortScan  : '#20c997',
+  'DoS-TCP' : '#ffc107',
+  'DDoS-TCP': '#dc3545',
+  OSScan    : '#6f42c1',
+  'DDoS-ICMP':'#fd7e14',
+  __other   : '#6c757d'
 };
 
-$('#btn').on('click', async ()=>{
-    const file = fileInput.files[0];
-    if(!file){alert('Selecciona un CSV'); return;}
+const $progress = $('#progress'), $tbl = $('#tbl'), $rz = $('#resetZoom');
+const chartDiv  = document.getElementById('chart');
+let   fullLayout = null;                     // para resetear rango
 
-    $progress.removeClass('d-none');
-    $table.clear().draw(); // vacía la tabla
-    $('#tbl').addClass('d-none');
+/* Botón “Predecir” */
+$('#btn').on('click', async () => {
+  const file = $('#file')[0].files[0];
+  if (!file) { alert('Selecciona un CSV'); return; }
 
-    if (chart) {          // destruir gráfico previo
-    chart.destroy();
-    chart = null;
-    }
-    $('#chart').addClass('d-none');  // ocultar canvas
+  /* ---- reset de UI ---- */
+  $progress.removeClass('d-none');
+  table.clear().draw();       $tbl.addClass('d-none');
+  Plotly.purge(chartDiv);     $('#chart').addClass('d-none');
+  $rz.addClass('d-none');
 
-    const fd = new FormData(); 
-    fd.append('csv', file);
-    try {
-        const res = await fetch('/predict', {method:'POST', body:fd})
-        if(!res.ok) throw new Error(await res.text());
-        const data = await res.json();
-        $table.rows.add(data).draw();
-        if(!data.length) alert('El archivo no contenía ventanas válidas.');
-        else $('#tbl').removeClass('d-none');
+  /* ---- envío a /predict ---- */
+  const fd = new FormData(); fd.append('csv', file);
+  try {
+    const res = await fetch('/predict', { method:'POST', body:fd });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
 
-        // Preparar datos para la gráfica
-        const labels = []; // eje X: inicio de ventana
-        const values = []; // eje Y: índice de clase (para color)
-        const labelSet = []; // para mapear clase -> índice
-        data.forEach(r=>{
-            labels.push(r.interval.split(' - ')[0]); // Solo inicio de ventana
-            let idx = labelSet.indexOf(r.label);
-            if(idx===-1){idx = labelSet.push(r.label)-1;}
-            values.push(idx);
-        });
+    /* ---- tabla ---- */
+    table.rows.add(data).draw();
+    if (data.length) $tbl.removeClass('d-none');
+    else { alert('El archivo no contenía ventanas válidas.'); }
 
-        // Construir datasets (1 por etiqueta)
-        const datasets = labelSet.map((lbl,i)=>({
-        label: lbl,
-        data: values.map(v=> v===i ? 1 : 0),
-        backgroundColor: COLOR_BY_LABEL[lbl] ?? COLOR_BY_LABEL.__other,
-        stack: 'uno'
-        }));
+    /* ---- gráfico Plotly ---- */
+    const labels = data.map(d => d.interval.split(' - ')[0]); // eje X
+    const barColors = data.map(d => COLOR[d.label] ?? COLOR.__other);
+    const hoverTxt  = data.map(d =>
+        `${d.label} — ${(d.confidence*100).toFixed(2)} %`);
 
-        // Crear o actualizar gráfico
-        if(chart){ chart.destroy(); }
-        chart = new Chart(ctx,{
+    /* trace principal: todas las barras (y=1) */
+    const mainTrace = {
+      type : 'bar',
+      x    : labels,
+      y    : Array(labels.length).fill(1),
+      marker : { color: barColors },
+      customdata   : hoverTxt,
+      hovertemplate: '%{x}<br>%{customdata}<extra></extra>',
+      showlegend   : false
+    };
+
+    /* trazas fantasma para leyenda (una por clase) */
+    const legendTraces = [...new Set(data.map(d => d.label))]
+      .map(lbl => ({
         type:'bar',
-        data:{ labels, datasets },
-        options:{
-            responsive:true,
-            plugins:{
-            legend:{ position:'top' },
-            tooltip:{ callbacks:{ label:(c)=>labelSet[c.datasetIndex] } }
-            },
-            scales:{
-            x:{ title:{text:'Ventanas de 5 s',display:true}, stacked:true },
-            y:{ display:false, stacked:true }  // altura no importa, sólo color
-            }
-        }
-        });
-        $('#chart').removeClass('d-none');  // mostrar nuevo gráfico
+        x:[null], y:[null],
+        marker:{ color: COLOR[lbl] ?? COLOR.__other },
+        name: lbl,
+        showlegend:true,
+        legendgroup:'g'
+      }));
 
-    }catch(e){
-        console.error(e); 
-        alert('Fallo: '+e.message);
-    }finally{
-        $progress.addClass('d-none');
-    }
+    const layout = {
+        barmode : 'stack',
+
+        xaxis : {
+            type       : 'category',
+            tickangle  : -45,
+            automargin : true,                 
+            title      : { text:'Ventanas de 5 s', standoff:15 }
+        },
+        yaxis : { visible:false },
+
+        legend : {
+            orientation:'h',
+            yanchor:'bottom', y:1.04,         
+            xanchor:'center', x:0.5
+        },
+
+        margin : { t:40, r:10, b:90, l:20 }  
+    };
+    fullLayout = JSON.parse(JSON.stringify(layout));
+
+    await Plotly.newPlot(chartDiv,
+                         [mainTrace, ...legendTraces],
+                         layout,
+                         {responsive:true, displaylogo:false});
+
+    $('#chart, #resetZoom').removeClass('d-none');
+    Plotly.Plots.resize(chartDiv)
+
+  } catch (e) {
+    console.error(e);
+    alert('Fallo: '+e.message);
+  } finally {
+    $progress.addClass('d-none');
+  }
 });
 
+/* Botón Reset zoom */
+$('#resetZoom').on('click', () => {
+  if (fullLayout) Plotly.relayout(chartDiv,
+    { 'xaxis.autorange':true, 'yaxis.autorange':true });
+});
 </script>
 
 </html>
