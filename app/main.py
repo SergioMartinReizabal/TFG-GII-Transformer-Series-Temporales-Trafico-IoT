@@ -9,7 +9,7 @@ from datetime import timedelta
 import pandas as pd, torch, joblib
 import numpy as np
 from pandas import Timestamp, Timedelta
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 
 # --- añade app/ al sys.path y carga utilidades ------------------------
 sys.path.append(str(Path(__file__).parent))
@@ -115,13 +115,16 @@ async def predict(csv: UploadFile = File(...),
         rep = classification_report(
                 y_true, y_pred, labels=labels_eval,
                 output_dict=True, zero_division=0)
-
+        
+        acc = accuracy_score(y_true, y_pred)
+        f1w = rep.get("weighted avg", {}).get("f1-score", 0.0)
+        
         evaluation = {
             "labels"   : labels_eval,
             "confusion": cm.tolist(),
             "metrics"  : {
-                "accuracy"   : rep["accuracy"],
-                "f1_weight": rep["weighted avg"]["f1-score"]
+                "accuracy"   : float(acc),
+                "f1_weight": float(f1w)
             }
         }
 
