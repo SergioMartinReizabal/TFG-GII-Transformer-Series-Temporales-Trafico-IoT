@@ -17,3 +17,5 @@ __pycache__/
 #!DatosMixtos/Benigno_PortScan
 
 !requirements.txt
+
+!TrazasPrueba/Benigno_PortScan.csv
