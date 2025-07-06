@@ -11,7 +11,7 @@ import numpy as np
 from pandas import Timestamp, Timedelta
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 
-# --- añade app/ al sys.path y carga utilidades ------------------------
+# Añade app/ al sys.path, carga utilidades y arquitectura del modelo
 sys.path.append(str(Path(__file__).parent))
 from modelo.utils import (
         procesar_flujos_por_ventanas_from_df,
@@ -20,7 +20,7 @@ from modelo.utils import (
 
 from modelo.arch  import TransformerEncoderClassifierWithCLS
 
-# -------- artefactos --------------------------------------------------
+# Artefactos
 EXP      = Path(__file__).parent / "modelo" / "export"
 device   = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -36,7 +36,7 @@ model = TransformerEncoderClassifierWithCLS(
 model.load_state_dict(torch.load(EXP/'model2.pth', map_location=device))
 model.eval()
 
-# -------------------- FASTAPI -----------------------------------------
+# FASTAPI 
 app = FastAPI(title="TFG · Clasificador IoT")
 
 @app.post("/predict")
@@ -48,16 +48,16 @@ async def predict(csv: UploadFile = File(...),
     df_raw = pd.read_csv(io.BytesIO(await csv.read()))
     has_label = "Label" in df_raw.columns
 
-    # --- decidir si ya existe la ventana -----------------------------
+    # Verificar si el CSV ya viene en formato de ventanas
     if "Ventana_Inicio" in df_raw.columns:
-        #  ➜  caso B  (ya vienen asignadas)
+        #  caso B  (ya vienen asignadas)
         df_windows = df_raw
     else:
-        #  ➜  caso A  (hay que agrupar en ventanas)
+        #  caso A  (hay que agrupar en ventanas)
         df_windows = procesar_flujos_por_ventanas_from_df(
                          df_raw.copy(), etiqueta_global=etiqueta)
 
-    # --- construir tensores -----------------------------------------
+    # Construir tensores de tamaño fijo
     df_windows["Ventana_Inicio"] = pd.to_datetime(
             df_windows["Ventana_Inicio"], errors='coerce')
 
@@ -75,7 +75,7 @@ async def predict(csv: UploadFile = File(...),
     starts = [pd.Timestamp(t) if isinstance(t, np.datetime64) else t for t in starts]
     assert len(starts) == len(dataset), "desfase ventanas ↔ tensores"
 
-    # --- etiquetas reales por ventana (si las trae) -----------------
+    # etiquetas reales por ventana (si las trae)
     y_true = []
     if has_label:
         # df_raw.Timstamp → datetime
@@ -88,7 +88,7 @@ async def predict(csv: UploadFile = File(...),
             lbls  = df_raw.loc[mask, "Label"]
             y_true.append(lbls.mode().iloc[0] if not lbls.empty else "__void__")
 
-    # --- inferencia ---------------------------------------------------
+    # inferencia
     preds, y_pred = [], []
     with torch.no_grad():
         for (x,_), s in zip(dataset, starts):
@@ -107,7 +107,7 @@ async def predict(csv: UploadFile = File(...),
                 **({"true": y_true[len(y_pred)-1]} if has_label else {})
             })
 
-    # --- métricas -----------------------------------------------------
+    # métricas
     evaluation = None
     if has_label:
         labels_eval = sorted(set(y_true + y_pred) - {"__void__"})
@@ -131,6 +131,5 @@ async def predict(csv: UploadFile = File(...),
     return JSONResponse({"pred": preds, "evaluation": evaluation})
 
 
-# ---------- servir frontend -------------------------------------------
 app.mount("/", StaticFiles(directory=Path(__file__).parents[1]/"frontend",
                            html=True), name="static")

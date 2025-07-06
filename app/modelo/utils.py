@@ -13,7 +13,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
-# ────────────────────────────── 1 · Ventanas ───────────────────────────────
+# 1 Ventanas
 def procesar_flujos_por_ventanas_from_df(
     df: pd.DataFrame,
     etiqueta_global: str = "__dummy__",    # se añade si el CSV no trae Label
@@ -56,7 +56,7 @@ def procesar_flujos_por_ventanas_from_df(
     return pd.DataFrame(filas)
 
 
-# ─────────────── 2 · Ventana → tensor con las columnas del training ────────
+# 2 Ventana a tensor con las columnas del training
 TRAIN_COLS: Optional[List[str]] = None   # se fija en la 1.ª llamada
 
 def windows_to_tensors(
@@ -105,7 +105,7 @@ def windows_to_tensors(
     return samples
 
 
-# ─────────────────────────── 3 · Dataset PyTorch ───────────────────────────
+# 3 Dataset PyTorch
 class WindowDataset(Dataset):
     def __init__(self, samples: List[Tuple[np.ndarray, int]], scaler, train_cols):
         self.samples = samples
@@ -116,11 +116,11 @@ class WindowDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx: int):
-        arr, lbl = self.samples[idx]                   # arr shape = (L, F)
-        flat = arr.reshape(-1, arr.shape[1]).copy()    # (L, F) → (L·F, F)
+        arr, lbl = self.samples[idx]                  
+        flat = arr.reshape(-1, arr.shape[1]).copy()   
 
-        # 1) LIMPIAR ANTES DE ESCALAR  ----------------------------
-        mask_bad = ~np.isfinite(flat)                  # NaN o ±Inf
+        # 1) LIMPIAR ANTES DE ESCALAR
+        mask_bad = ~np.isfinite(flat) # NaN o ±Inf
         if mask_bad.any():
             # logueamos sólo la primera ocurrencia problemática
             r, c = np.argwhere(mask_bad)[0]
@@ -131,10 +131,10 @@ class WindowDataset(Dataset):
                   f"Raw={raw_val}  →  0.0")
             flat[mask_bad] = 0.0
 
-        # 2) ESCALAR ---------------------------------------------
+        # 2) ESCALAR
         norm = self.scaler.transform(flat).reshape(arr.shape)
 
-        # 3) SEGURIDAD EXTRA (rara vez salta) ---------------------
+        # 3) SEGURIDAD EXTRA (LIMPIAR DESPUÉS DE ESCALAR)
         if not np.isfinite(norm).all():
             r, c = np.argwhere(~np.isfinite(norm))[0]
             col_name = self.train_cols[c] \

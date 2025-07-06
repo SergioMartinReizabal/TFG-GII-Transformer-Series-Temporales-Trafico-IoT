@@ -1,7 +1,7 @@
 fastapi==0.110.*
 uvicorn[standard]==0.29.*
-python-multipart      # para subir archivos
+python-multipart      
 pandas==2.*
 scikit-learn==1.*
-torch==2.3.*          # usa la CPU si no tienes CUDA
+torch==2.3.*         
 joblib
