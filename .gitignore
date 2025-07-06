@@ -1,5 +1,18 @@
+# ───── 1) Ignora basura habitual ─────
+*.py[cod]
+__pycache__/
 .ipynb_checkpoints/
 
 *.pth
-
 *.csv
+*.txt
+
+# ───── 3) EXCEPCIONES que sí quiero en Git ─────
+
+# Pequeños modelos exportados (<100 MB)
+!app/modelo/export/*.pth
+
+# CSV ligeros (<100 MB) que sí interesan
+!DatosMixtos/Benigno_PortScan
+
+!requirements.txt

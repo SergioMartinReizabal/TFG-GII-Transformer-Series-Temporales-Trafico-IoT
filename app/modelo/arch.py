@@ -1,4 +1,3 @@
-# arch.py  ── versión compatible con el modelo entrenado
 import math
 import torch
 import torch.nn as nn
@@ -104,9 +103,9 @@ class TransformerEncoderClassifierWithCLS(nn.Module):
         dropout=0.1,
     ):
         super().__init__()
-        self.input_proj = nn.Linear(input_dim, d_model)      # ← NOMBRE ORIGINAL
+        self.input_proj = nn.Linear(input_dim, d_model)     
         self.cls_token = nn.Parameter(torch.randn(1, 1, d_model))
-        self.pos_embed = PositionalEmbedding(d_model, max_seq_len)  # 128, no 129
+        self.pos_embed = PositionalEmbedding(d_model, max_seq_len)  
         self.encoder = Encoder(d_model, num_heads, d_ff, num_layers, dropout)
         self.classifier = nn.Linear(d_model, num_classes)
 
